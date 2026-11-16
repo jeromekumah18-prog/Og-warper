@@ -1,0 +1,51 @@
+-- Warper Keep: stops the game from telling the server you went through a Warper portal (the "JustWarped" call),
+-- so the exit portal shouldn't get used up. Run it again to turn it off.
+
+local BLOCK = {JustWarped = true}   -- remote names to block. Add more names here if needed
+
+local genv = (getgenv and getgenv()) or _G
+local SG = game:GetService("StarterGui")
+local function note(t) pcall(function() SG:SetCore("SendNotification", {Title = "Warper Keep", Text = t, Duration = 5}) end) end
+
+if typeof(genv.UMM_STOP_WARPERKEEP) == "function" then
+	local n = genv.UMM_STOP_WARPERKEEP()
+	genv.UMM_STOP_WARPERKEEP = nil
+	note("Turned off (blocked " .. tostring(n) .. " warps)")
+	return
+end
+
+local on, blocked = true, 0
+local nc = newcclosure or function(f) return f end
+
+local function shouldBlock(remote)
+	if on and typeof(remote) == "Instance" and BLOCK[remote.Name] then
+		blocked = blocked + 1
+		if blocked == 1 then note("Blocked the warp signal. Your portal should stay.") end
+		return true
+	end
+	return false
+end
+
+-- hook 1: calls made as remote.FireServer(remote, ...)
+pcall(function()
+	local o
+	o = hookfunction(Instance.new("RemoteEvent").FireServer, nc(function(self, ...)
+		if shouldBlock(self) then return end   -- drop the call, the server never hears about it
+		return o(self, ...)
+	end))
+end)
+
+-- hook 2: calls made as remote:FireServer(...)
+pcall(function()
+	local o
+	o = hookmetamethod(game, "__namecall", nc(function(self, ...)
+		if getnamecallmethod() == "FireServer" and shouldBlock(self) then return end
+		return o(self, ...)
+	end))
+end)
+
+genv.UMM_STOP_WARPERKEEP = function()
+	on = false
+	return blocked
+end
+note("On. Go through your portal.")
